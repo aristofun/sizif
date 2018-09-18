@@ -11,7 +11,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="sizif",
-    version=pyagender.VERSION,
+    version=sizif.VERSION,
     author="Michael Butlitsky",
     author_email="aristofun@yandex.ru",
     description="Deep learning Keras models lifecycle management backup/restore nano framework",
