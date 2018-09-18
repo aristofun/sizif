@@ -84,6 +84,13 @@ class KerasModelWrapper:
         else:
             print(f'\nModel weights not loaded. cp: "{self.storage.current_checkpoint}"')
 
+    def __getattr__(self, name):
+        """
+        Wildcard method/attribute proxy to the model.
+        For experimental use, use direct .model object for real stuff.
+        """
+        return getattr(self.model, name)
+
     class KerasCallback(Callback):
         """
         Middleman receiving notifications from keras model and notifying storage monitor
