@@ -1,9 +1,11 @@
-# Deep learning models lifecycle management backup/restore nano framework
-Currently only for Keras >= 2.2 models.
+# DL backup/restore nano framework
 
-<image src="./pic.png" />
+<image src="./pic.png" align="right" width=240 />
 
-# How to use
+Makes it easy to start/stop/resume deep learning models training. Current alpha version supports only for Keras >= 2.2 models. Feel free to contribute.
+
+
+# Usage
 
 ```commandline
 pip3 install sizif
