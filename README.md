@@ -3,7 +3,9 @@
 
 # DL backup/restore nano framework
 
-Makes it easy to start/stop/resume deep learning models training. Current alpha version supports only for Keras >= 2.2 models. Feel free to contribute.
+Makes it easy to start/stop/resume deep learning models training. 
+
+Current version supports only for Keras >= 2.2 models. You're welcome to contribute.
 
 
 # Usage
