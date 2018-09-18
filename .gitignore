@@ -1,0 +1,9 @@
+*.pyc
+.venv
+*.hdf5
+# Setuptools distribution folder.
+/dist/
+/build/
+
+# Python egg metadata, regenerated from source files by setuptools.
+/*.egg-info
