@@ -1,5 +1,5 @@
 
-<image src="./pic.png" align="right" width=240 />
+<image src="https://github.com/aristofun/sizif/raw/master/pic.png" align="right" width=240 />
 
 # DL backup/restore nano framework
 
