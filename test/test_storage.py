@@ -26,11 +26,11 @@ class TestFileStorage(TestCase):
         self.assertEqual(fm.checkpoints, [])
         self.assertEqual(fm.rotate_number, -1)
         self.assertEqual(fm.verbose, 1)
-        self.assertEqual(fm.state_file, 'votka/currentstate_24.json')
+        self.assertEqual(fm.state_filepath, 'votka/currentstate_24.json')
         self.assertEqual(fm.checkpoint_path, 'votka/model_24_weights/{epoch:04d}-{'':.3f}.hdf5')
-        self.assertTrue(os.path.exists(fm.state_file))
-        os.remove(fm.state_file)
-        os.rmdir(os.path.dirname(fm.state_file))
+        self.assertTrue(os.path.exists(fm.state_filepath))
+        os.remove(fm.state_filepath)
+        os.rmdir(os.path.dirname(fm.state_filepath))
 
     def test_writing_checkpoints_raise_error(self):
         fm = FileCheckpointsMonitor(version=0, file_template='hey.txt')
@@ -39,7 +39,7 @@ class TestFileStorage(TestCase):
             fm.on_checkpoint_written(fm.checkpoint_path, {})
 
         # cleanup
-        shutil.rmtree(os.path.dirname(fm.state_file))
+        shutil.rmtree(os.path.dirname(fm.state_filepath))
 
     def test_rotate_reset(self):
         fm = FileCheckpointsMonitor(version=1, file_template='he{o}y', rotate_number=3)
@@ -59,21 +59,21 @@ class TestFileStorage(TestCase):
         self.assertFalse(os.path.exists(fm.checkpoint_path + '3'))
         self.assertEqual(2, len(fm.checkpoints))
 
-        with open(fm.state_file, "r") as fp:
+        with open(fm.state_filepath, "r") as fp:
             data = json.load(fp)
         self.assertEqual(data['checkpoint'], fm.current_checkpoint)
 
         fm.reset()
         self.assertEqual([], fm.checkpoints)
 
-        with open(fm.state_file, "r") as fp:
+        with open(fm.state_filepath, "r") as fp:
             data = json.load(fp)
 
         self.assertEqual('', fm.current_checkpoint)
         self.assertEqual(data['checkpoint'], fm.current_checkpoint)
 
         # cleanup
-        shutil.rmtree(os.path.dirname(fm.state_file))
+        shutil.rmtree(os.path.dirname(fm.state_filepath))
 
     def test_writing_checkpoints_autorotate(self):
         fm = FileCheckpointsMonitor(version=2, file_template='hey.txt', rotate_number=3)
@@ -98,4 +98,4 @@ class TestFileStorage(TestCase):
         self.assertFalse(os.path.exists(fm.checkpoint_path + '1'))
 
         # cleanup
-        shutil.rmtree(os.path.dirname(fm.state_file))
+        shutil.rmtree(os.path.dirname(fm.state_filepath))
