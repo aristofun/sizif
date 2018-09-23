@@ -7,6 +7,6 @@
 
 # Python egg metadata, regenerated from source files by setuptools.
 /*.egg-info
-/sizif/_ftptest.py
+/sizif/_ftpplay.py
 /sizif/*.sh
 /sizif/*.jpg
