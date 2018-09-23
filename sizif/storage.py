@@ -206,7 +206,7 @@ class FileCheckpointsMonitor:
     def _add_checkpoint(self, cp, params):
         self.current_params = params
         self.current_checkpoint = cp
-        if self.current_checkpoint and self.checkpoints[-1] != self.current_checkpoint:
+        if self.current_checkpoint and (len(self.checkpoints) == 0 or self.checkpoints[-1] != self.current_checkpoint):
             self.checkpoints.append(self.current_checkpoint)
 
     def _verbose(self, string):
