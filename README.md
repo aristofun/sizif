@@ -37,21 +37,21 @@ cpm = FTPFileCheckpointsMonitor(1,
                                remote_folder='/snapshots_ftp_dir',
                                host='ftp.your-host.com', login='your_ftp_login',
                                password='your_ftp_password',
-                               die_on_ftperrors=False,
+                               die_on_ftperrors=True,
                                rotate_number=3,
                                monitor='val_loss',
                                verbose=1,
                                save_best_only=False,
-                               save_weights_only=False,
+                               save_weights_only=True,
                                mode='auto',
                                period=1)
                                
 # Keras wrapper, proxies all calls to the model
-# except fit and fit_generator — which are surrounded 
+# except `fit` and `fit_generator` — which are surrounded 
 # by automated model state backup/recovery   
 km = KerasModelWrapper(model, cpm)
 
-# all method parameters ar proxied to Keras as is except callbacks
+# all method parameters are proxied to Keras as is except callbacks
 # callbacks are extended with `cpm` listener 
 km.fit_generator(training_set_generator,
                  epochs=25,

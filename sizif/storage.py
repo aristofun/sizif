@@ -124,7 +124,7 @@ class FileCheckpointsMonitor:
                 val_loss etc.
         :raise: FileNotFoundError if file_path doesn't exist or not accessible
         """
-        self._verbose(f'#on_checkpoint_written({file_path}, ...)')
+        logger.info(f'#on_checkpoint_written({file_path}, ...)')
         params = params or {}
         # if checkpoint is not present
         if not (os.path.isfile(file_path) and os.access(file_path, os.R_OK)):
@@ -149,6 +149,7 @@ class FileCheckpointsMonitor:
 
         :return: True if any actual checkpoints were removed, False otherwise
         """
+        logger.info(f'Rotating {self.rotate_number} cpoints from {self.checkpoints}')
         rotate_number = int(rotate_number or self.rotate_number)  # that's right, no 0 rotation!
         if rotate_number < 1: return False
 
@@ -173,7 +174,7 @@ class FileCheckpointsMonitor:
         """
         Clears all checkpoints and saves blank checkpoint status file. No checkpoints are rotated.
         """
-        self._verbose(f'#reset(), checkpoints size: {len(self.checkpoints)}')
+        logger.info(f'#reset(), checkpoints: {len(self.checkpoints)}')
         self.current_checkpoint = ''
         self.checkpoints.clear()
         self._save_current_status()
@@ -181,15 +182,19 @@ class FileCheckpointsMonitor:
     # --------------- protected methods --------------------------------------------
 
     def _load_current_status(self, reset_on_deadcheckpoint=True):
-        with open(self.state_filepath, "r") as fp:
-            data = json.load(fp)
+        try:
+            with open(self.state_filepath, "r") as fp:
+                data = json.load(fp)
 
-        self._add_checkpoint(data['checkpoint'], data)
+            self._add_checkpoint(data['checkpoint'], data)
 
-        # if checkpoint is not present - reset the checkpoint
-        if reset_on_deadcheckpoint \
-                and not (os.path.isfile(self.current_checkpoint)
-                         and os.access(self.current_checkpoint, os.R_OK)):
+            # if checkpoint is not present - reset the checkpoint
+            if reset_on_deadcheckpoint \
+                    and not (os.path.isfile(self.current_checkpoint)
+                             and os.access(self.current_checkpoint, os.R_OK)):
+                self.reset()
+        except Exception as e:
+            logger.exception(f'Error reading {self.state_filepath}', exc_info=e)
             self.reset()
 
     def _save_current_status(self):
@@ -228,7 +233,7 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
                  remote_folder='/',
                  host=None, port=0, login=None, password=None,
                  die_on_ftperrors=False,
-                 threads_count=3,
+                 threads_count=4,
                  rotate_number=5,
                  monitor='val_loss',
                  verbose=0,
@@ -310,22 +315,26 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
 
         # create remote folder if not exist
         ftp = self.__getftp()
-        if not (self.remote_folder == ftp.pwd() or self.__ftp_direxist(ftp, self.remote_folder)):
+        if not (self.remote_folder == ftp.pwd()
+                or self.ftp_direxist(ftp, self.remote_folder[1:])):
             ftp.mkd(self.remote_folder)
 
         ftp.cwd(self.remote_folder)
 
         # download current statefile
-        if self.__ftp_download(self.state_filename, self.state_filepath, ftp=ftp):
-            self._load_current_status(reset_on_deadcheckpoint=False)
-            # download recent checkpoint
+        if self.ftp_filexist(ftp, self.state_filename):
+            self.__ftp_download(self.state_filename, self.state_filepath, ftp=ftp)
+
+        self._load_current_status(reset_on_deadcheckpoint=False)
+
+        # download recent checkpoint if needed
+        if self.current_checkpoint and not (os.path.isfile(self.current_checkpoint)
+                                            and os.access(self.current_checkpoint, os.R_OK)):
             self.__ftp_download(os.path.basename(self.current_checkpoint),
                                 self.current_checkpoint,
                                 ftp=ftp)
-            self._load_current_status()
-        else:
-            self.reset()
 
+        self._load_current_status()
         ftp.close()
 
     # ---------------- PUBLIC interface --------------------------------------------
@@ -342,7 +351,16 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         self.__thread_check()
         super().on_checkpoint_written(file_path, params)
 
-        # self._verbose(f'FTP to upload "{file_path}"...')
+        # XXX: slow connections workaround upload state file synchronously
+        # important to have fresh statefile on remote server
+        upload_task(self.state_filepath, self.state_filename, remote_folder=self.remote_folder,
+                    host=self.host, port=self.port,
+                    login=self.login, password=self.password,
+                    die_on_ftperrors=True,
+                    verbose=self.verbose)
+        # self.__ftp_upload(self.state_filepath, self.state_filename)
+
+        # async upload of checkpoint
         self.__ftp_upload(file_path, os.path.basename(file_path))
 
     def rotate_checkpoints(self, rotate_number=None, rotate_fn=None):
@@ -354,8 +372,12 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         return super().rotate_checkpoints(rotate_number=rotate_number, rotate_fn=rotate_lambda)
 
     @staticmethod
-    def __ftp_direxist(ftp, folder):
+    def ftp_direxist(ftp, folder):
         return any((f[0] == folder and f[1]['type'] == 'dir') for f in ftp.mlsd())
+
+    @staticmethod
+    def ftp_filexist(ftp, filename):
+        return filename in ftp.nlst()
 
     def __getftp(self, remote_folder=None):
         ftp = ftplib.FTP(timeout=ftptasks.FTP_OPERATION_TIMEOUT)
@@ -395,17 +417,19 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
 
     def __ftp_remove(self, file_name):
         """
-        Async ftp file upload on new FTP connection
+        Async ftp file remove on new FTP connection
         """
 
         def runner(fname):
             try:
+                logger.info(f'Removing {fname} from server')
                 ftp = self.__getftp(self.remote_folder)
                 ftp.delete(fname)
                 ftp.close()
             except BaseException as e:
-                self.thread_dead = True
-                self.thread_result = e
+                logger.error(f'Cant remove {fname}', exc_info=e)
+                # self.thread_dead = True
+                # self.thread_result = e
 
         self.executor.submit(runner, file_name)
 

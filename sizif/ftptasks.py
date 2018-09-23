@@ -3,7 +3,6 @@ import logging
 import os
 import platform
 import socket
-import sys
 import time
 
 """
@@ -11,12 +10,16 @@ Atomic synchronous download/upload jobs to be executed either on main or backgro
 """
 
 FTP_RETRY_COUNT = 10  # attempts to execute failed FTP operation
-FTP_RETRY_DELAY = 5  # seconds between another FTP attempt
+FTP_RETRY_DELAY = 3  # seconds between another FTP attempt
 FTP_OPERATION_TIMEOUT = 70.  # seconds per single blocking socket operation
 MACOS = 'darwin' in platform.system().lower()  # socket options different for macOS and Linux
 
-logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+# lh = logging.StreamHandler(sys.stdout)
+# lh.setLevel(logging.DEBUG)
+# logger.addHandler(lh)
+logger.setLevel(logging.DEBUG)
 
 
 def download_task(from_filename, to_filepath, remote_folder='/',
@@ -37,16 +40,14 @@ def download_task(from_filename, to_filepath, remote_folder='/',
     :param port: remote port
     :param login: FTP login
     :param password: FTP password
-    :param die_on_ftperrors: True — reraise ftplib errors, False - just log and return
-            last exception
+    :param die_on_ftperrors: True — reraise ftplib errors, False - just log and return last exception
     :param verbose: ftplib verbosity option
-    :param ftp: FTP() instance to operate on, if None - new created and closed after
-            download complete
+    :param ftp: FTP() instance to operate on, if None - new created and closed after download complete
 
-    :return True on successfull download, exception instance of last error on failed download
+    :return (True, None) on successfull download, (False, exception) of last error on failed download
             Exception is raised immediately if die_on_ftperrors == True
     """
-    logger.debug(f'Downloading from {from_filename} to {to_filepath}')
+    logger.info(f'Downloading from {from_filename} to {to_filepath}')
     ftpw = FTPWrapper(remote_folder, host, port, login, password, verbose, ftp)
     exception = None
 
@@ -75,7 +76,7 @@ def download_task(from_filename, to_filepath, remote_folder='/',
                     ftpw.ftp.retrbinary(f'RETR {from_filename}', write_progress, rest=f.tell())
 
                 downloading = False
-                logger.debug(f'Downloaded {f.tell()}/{target_size} bytes')
+                logger.info(f'Downloaded {f.tell()}/{target_size} bytes to {to_filepath}')
             except ftplib.all_errors as e:
                 logger.exception(f'Error downloading {from_filename}', exc_info=e)
                 attempts -= 1
@@ -96,9 +97,9 @@ def download_task(from_filename, to_filepath, remote_folder='/',
             ftpw.close()
 
     if exception:
-        return exception
+        return (False, exception)
     else:
-        return True
+        return (True, None)
 
 
 def upload_task(from_filepath, to_filename, remote_folder='/',
@@ -113,10 +114,10 @@ def upload_task(from_filepath, to_filename, remote_folder='/',
 
     Params are equivalent to :py:meth:`download_task`
 
-    :return True on successfull download, exception instance of last error on failed download
+    :return (True, None) on successfull download, (False, exception) of last error on failed download
             Exception is raised immediately if die_on_ftperrors == True
     """
-    logger.debug(f'Uploading from {from_filepath} to {remote_folder}/{to_filename}')
+    logger.info(f'Uploading from {from_filepath} to {remote_folder}/{to_filename}')
     ftpw = FTPWrapper(remote_folder, host, port, login, password, verbose, ftp)
     exception = None
     first_access = True
@@ -155,7 +156,8 @@ def upload_task(from_filepath, to_filename, remote_folder='/',
                                     rest=(rest_pos or None))
 
                 uploading = False
-                logger.debug(f'Uploaded {tracker.bytes_processed}/{target_size} bytes')
+                logger.info(
+                    f'Uploaded {tracker.bytes_processed}/{target_size} bytes from {from_filepath}')
             except ftplib.all_errors as e:
                 logger.exception(f'Error uploading {from_filepath}', exc_info=e)
                 attempts -= 1
@@ -173,13 +175,12 @@ def upload_task(from_filepath, to_filename, remote_folder='/',
 
                 logger.debug(f'Waiting {FTP_RETRY_DELAY} sec before upload resume...')
                 time.sleep(FTP_RETRY_DELAY)
-
             ftpw.close()
 
     if exception:
-        return exception
+        return (False, exception)
     else:
-        return True
+        return (True, None)
 
 
 class FTPWrapper:
