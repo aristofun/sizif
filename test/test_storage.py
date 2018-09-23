@@ -27,7 +27,7 @@ class TestFileStorage(TestCase):
         self.assertEqual(fm.rotate_number, -1)
         self.assertEqual(fm.verbose, 1)
         self.assertEqual(fm.state_filepath, 'votka/currentstate_24.json')
-        self.assertEqual(fm.checkpoint_path, 'votka/model_24_weights/{epoch:04d}-{'':.3f}.hdf5')
+        self.assertEqual(fm.checkpoint_path, 'votka/model_24__weights_{epoch:04d}-{'':.3f}.hdf5')
         self.assertTrue(os.path.exists(fm.state_filepath))
         os.remove(fm.state_filepath)
         os.rmdir(os.path.dirname(fm.state_filepath))

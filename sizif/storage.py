@@ -4,8 +4,9 @@ import os
 import re
 import sys
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
-from ftptasks import download_task, upload_task
+from .ftptasks import download_task, upload_task
 
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 logger = logging.getLogger(__name__)
@@ -92,7 +93,7 @@ class FileCheckpointsMonitor:
         self.state_filename = f'currentstate_{model_version}.json'
         self.state_filepath = os.path.normpath(os.path.join(folder, self.state_filename))
 
-        file_name = 'model_' + model_version + '_' + re.sub(r'[/\\:;\s]+', '_', str(file_template))
+        file_name = 'model_' + model_version + '_' + re.sub(r'[/\\;\s]+', '_', str(file_template))
         # '.weights.{epoch:04d}-{' + monitor + ':.3f}.hdf5'
 
         self.checkpoint_path = os.path.normpath(os.path.join(folder, file_name))
@@ -282,13 +283,20 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         :param period: Interval (number of epochs) between checkpoints.
 
         """
-        self.remote_folder = re.sub(r'[/\\:;\s]+', '_', str(remote_folder))
+
+        remote_folder = str(remote_folder).strip().strip('/\\')
+        self.remote_folder = '/' + re.sub(r'[/\\:;\s]+', '_', remote_folder)
         self.host = host
         self.port = port
         self.login = login
         self.password = password
         self.threads_count = threads_count
         self.die_on_ftperrors = die_on_ftperrors
+        self.executor = ThreadPoolExecutor(max_workers=threads_count)
+        # If self.thread_dead - some thread died with some error, call self.thread_result()
+        # on main thread to raise exception
+        self.thread_dead = False
+        self.thread_result = None
 
         # create remote folder if not exist
         ftp = self.__getftp()
@@ -321,6 +329,10 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         :param params: additional params dict to save to `state_file` like epoch number, val_loss etc.
         :raise: FileNotFoundError if file_path doesn't exist or not accessible
         """
+        # execute last threadpool error and raise exception
+        if self.die_on_ftperrors and self.thread_dead:
+            self.thread_result()
+            
         super().on_checkpoint_written(file_path, params)
 
         # self._verbose(f'FTP to upload "{file_path}"...')
@@ -348,4 +360,24 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         return ftp
 
     def __ftp_download(self, from_filename, to_filepath, ftp=None):
-        download_task(from_filename, to_filepath, remote_folder=self.remote_folder, ftp=ftp)
+        download_task(from_filename, to_filepath,
+                      login=self.login, password=self.password,
+                      remote_folder=self.remote_folder,
+                      verbose=self.verbose, ftp=ftp)
+
+    # Async ftp file upload on new FTP connection
+    def __ftp_upload(self, from_filepath, to_filename):
+        # TODO thread pool this!
+
+        def runner(**kwargs):
+            try:
+                upload_task(**kwargs)
+            except BaseException:
+                pass
+
+
+        upload_task(from_filepath, to_filename,
+                    host=self.host, port=self.port, login=self.login,
+                    password=self.password,
+                    remote_folder=self.remote_folder,
+                    verbose=self.verbose)
