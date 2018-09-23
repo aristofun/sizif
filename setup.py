@@ -1,6 +1,9 @@
 import setuptools
 import sizif
 
+# ignore files https://stackoverflow.com/questions/26911045/is-it-possible-to-exclude-certain-files-when-building-a-wheel-with-setup-py
+
+
 REQUIRED_PACKAGES = [
     'numpy >= 1.12',
     'Keras >= 2.2'

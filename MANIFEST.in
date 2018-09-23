@@ -1,3 +1,2 @@
 prune test*
-prune sizif/_ftp*.py
-prune sizif/*.jpg
+prune playground*
