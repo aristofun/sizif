@@ -37,9 +37,11 @@ def download_task(from_filename, to_filepath, remote_folder='/',
     :param port: remote port
     :param login: FTP login
     :param password: FTP password
-    :param die_on_ftperrors: True — reraise ftplib errors, False - just log and return last exception
+    :param die_on_ftperrors: True — reraise ftplib errors, False - just log and return
+            last exception
     :param verbose: ftplib verbosity option
-    :param ftp: FTP() instance to operate on, if None - new created and closed after download complete
+    :param ftp: FTP() instance to operate on, if None - new created and closed after
+            download complete
 
     :return True on successfull download, exception instance of last error on failed download
             Exception is raised immediately if die_on_ftperrors == True
@@ -82,6 +84,7 @@ def download_task(from_filename, to_filepath, remote_folder='/',
                     logger.error(
                         f'{FTP_RETRY_COUNT} attempts made, {from_filename}.tell() is {f.tell()}')
                     if die_on_ftperrors:
+                        ftpw.close()
                         raise e
                     else:
                         exception = e
@@ -162,6 +165,7 @@ def upload_task(from_filepath, to_filename, remote_folder='/',
                         f'{FTP_RETRY_COUNT} attempts made'
                         + (f'{tracker.bytes_processed} bytes uploaded' if tracker else ''))
                     if die_on_ftperrors:
+                        ftpw.close()
                         raise e
                     else:
                         exception = e
@@ -218,8 +222,8 @@ class FTPWrapper:
         self.ftp.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         # https://stackoverflow.com/questions/12248132/how-to-change-tcp-keepalive-timer-using-python-script
         if MACOS:
-            TCP_KEEPALIVE = 0x10
-            self.ftp.sock.setsockopt(socket.IPPROTO_TCP, TCP_KEEPALIVE, 50)
+            tcp_keepalive = 0x10
+            self.ftp.sock.setsockopt(socket.IPPROTO_TCP, tcp_keepalive, 50)
         else:
             self.ftp.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 40)
             self.ftp.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 50)

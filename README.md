@@ -3,9 +3,12 @@
 
 # DL backup/restore nano framework
 
-Makes it easy to start/stop/resume deep learning models training. 
+Auto backup/restore model snapshots of deep learning models:
 
-Current version supports only for Keras >= 2.2 models. You're welcome to contribute.
+- to/from local filesystem
+- to/from remote FTP server
+
+Current version supports only Keras >= 2.2 models. You're welcome to contribute.
 
 
 # Usage
@@ -14,36 +17,42 @@ Current version supports only for Keras >= 2.2 models. You're welcome to contrib
 pip3 install sizif
 ```
 
-Local filesystem Keras checkpoints backup: 
+FTP Keras checkpoints backup/restore: 
 
 ```python
 from sizif.keras import KerasModelWrapper
-from sizif.storage import FileCheckpointsMonitor
+from sizif.storage import FTPFileCheckpointsMonitor
 
 # your compiled Keras Model instance
 model = build_model()  
 
 
-# Snapshots monitor
+# Local filesystem snapshots monitor with FTP backup/restore 
 # Different model architectures should have different version parameter
 # other parameters similar to Keras ModelCheckpoint
-cpm = FileCheckpointsMonitor(version=1,
-                            file_template='weights.{epoch:03d}-vl{val_loss:.3f}.hdf5',
-                            folder='./checkpoints',
-                            rotate_number=5,
-                            monitor='val_acc',
-                            verbose=1,
-                            save_best_only=False,
-                            save_weights_only=True,
-                            mode='auto',
-                            period=1)
-
+# See sizif.storage.FileCheckpointsMonitor for local file only backup/restore 
+cpm = FTPFileCheckpointsMonitor(1,
+                               'weights.{epoch:03d}-vl{val_loss:.3f}-va{val_acc:.3f}.hdf5',
+                               local_folder='/snapshots_local_dir',
+                               remote_folder='/snapshots_ftp_dir',
+                               host='ftp.your-host.com', login='your_ftp_login',
+                               password='your_ftp_password',
+                               die_on_ftperrors=False,
+                               rotate_number=3,
+                               monitor='val_loss',
+                               verbose=1,
+                               save_best_only=False,
+                               save_weights_only=False,
+                               mode='auto',
+                               period=1)
+                               
 # Keras wrapper, proxies all calls to the model
 # except fit and fit_generator — which are surrounded 
 # by automated model state backup/recovery   
 km = KerasModelWrapper(model, cpm)
 
 # all method parameters ar proxied to Keras as is except callbacks
+# callbacks are extended with `cpm` listener 
 km.fit_generator(training_set_generator,
                  epochs=25,
                  validation_data=test_set_generator,
@@ -53,7 +62,7 @@ km.fit_generator(training_set_generator,
 See sources for detailed docstrings
 
 ## TODO: 
-- FTP/S3/SFTP/Dropbox uploading monitors
+- SSH/S3/Dropbox uploading monitors
 - Tensorflow/Pytorch models support
 
 ## Tests

@@ -6,7 +6,8 @@ import sys
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-from .ftptasks import download_task, upload_task
+from sizif import ftptasks
+from sizif.ftptasks import download_task, upload_task
 
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 logger = logging.getLogger(__name__)
@@ -100,7 +101,9 @@ class FileCheckpointsMonitor:
         self.checkpoints = list()
         self.current_checkpoint = ''
         self.current_params = dict()
+        self._load_statefile()
 
+    def _load_statefile(self):
         # https://stackoverflow.com/a/12517490/1245302
         # check folder access and initialize current status file value
         if not os.path.isfile(self.state_filepath):
@@ -117,7 +120,8 @@ class FileCheckpointsMonitor:
         able to run additional processing.
 
         :param file_path:
-        :param params: additional params dict to save to `state_file` like epoch number, val_loss etc.
+        :param params: additional params dict to save to `state_file` like epoch number,
+                val_loss etc.
         :raise: FileNotFoundError if file_path doesn't exist or not accessible
         """
         self._verbose(f'#on_checkpoint_written({file_path}, ...)')
@@ -140,7 +144,8 @@ class FileCheckpointsMonitor:
         :param rotate_number: self.rotate_number is used if 0 or None provided
                 -1 meaning no rotation
 
-        :param rotate_fn: additional rotate function to be called with filepath parameter of actually removed file
+        :param rotate_fn: additional rotate function to be called with filepath parameter of
+                actually removed file
 
         :return: True if any actual checkpoints were removed, False otherwise
         """
@@ -298,6 +303,11 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         self.thread_dead = False
         self.thread_result = None
 
+        super().__init__(version, file_template, folder=local_folder, rotate_number=rotate_number,
+                         monitor=monitor, verbose=verbose, save_best_only=save_best_only,
+                         save_weights_only=save_weights_only,
+                         mode=mode, period=period)
+
         # create remote folder if not exist
         ftp = self.__getftp()
         if not (self.remote_folder == ftp.pwd() or self.__ftp_direxist(ftp, self.remote_folder)):
@@ -306,39 +316,36 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         ftp.cwd(self.remote_folder)
 
         # download current statefile
-        self.__ftp_download(self.state_filename, self.state_filepath, ftp=ftp)
-        self._load_current_status(reset_on_deadcheckpoint=False)
+        if self.__ftp_download(self.state_filename, self.state_filepath, ftp=ftp):
+            self._load_current_status(reset_on_deadcheckpoint=False)
+            # download recent checkpoint
+            self.__ftp_download(os.path.basename(self.current_checkpoint),
+                                self.current_checkpoint,
+                                ftp=ftp)
+            self._load_current_status()
+        else:
+            self.reset()
 
-        # download recent checkpoint
-        self.__ftp_download(os.path.basename(self.current_checkpoint),
-                            self.current_checkpoint,
-                            ftp=ftp)
         ftp.close()
-
-        super().__init__(version, file_template, folder=local_folder, rotate_number=rotate_number,
-                         monitor=monitor, verbose=verbose, save_best_only=save_best_only,
-                         save_weights_only=save_weights_only,
-                         mode=mode, period=period)
 
     # ---------------- PUBLIC interface --------------------------------------------
 
     def on_checkpoint_written(self, file_path, params):
         """
-        Adds new FTP upload task to background thread pool. Must be called after actual file is written to local FS.
+        Adds new FTP upload task to background thread pool. Must be called after actual file
+        is written to local FS.
 
-        :param params: additional params dict to save to `state_file` like epoch number, val_loss etc.
+        :param params: additional params dict to save to `state_file` like epoch number,
+                val_loss etc.
         :raise: FileNotFoundError if file_path doesn't exist or not accessible
         """
-        # execute last threadpool error and raise exception
-        if self.die_on_ftperrors and self.thread_dead:
-            self.thread_result()
-            
+        self.__thread_check()
         super().on_checkpoint_written(file_path, params)
 
         # self._verbose(f'FTP to upload "{file_path}"...')
         self.__ftp_upload(file_path, os.path.basename(file_path))
 
-    def rotate_checkpoints(self, rotate_number=None):
+    def rotate_checkpoints(self, rotate_number=None, rotate_fn=None):
         """
         Removes all checkpoint files except recent `rotate_number` locally and from FTP
         :return: True if any actual local checkpoints were removed, False otherwise
@@ -346,11 +353,12 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         rotate_lambda = lambda filepath: self.__ftp_remove(os.path.basename(filepath))
         return super().rotate_checkpoints(rotate_number=rotate_number, rotate_fn=rotate_lambda)
 
-    def __ftp_direxist(self, ftp, folder):
+    @staticmethod
+    def __ftp_direxist(ftp, folder):
         return any((f[0] == folder and f[1]['type'] == 'dir') for f in ftp.mlsd())
 
     def __getftp(self, remote_folder=None):
-        ftp = ftplib.FTP()
+        ftp = ftplib.FTP(timeout=ftptasks.FTP_OPERATION_TIMEOUT)
         ftp.connect(self.host, self.port)
         ftp.login(self.login, self.password)
         ftp.set_pasv(True)
@@ -360,24 +368,57 @@ class FTPFileCheckpointsMonitor(FileCheckpointsMonitor):
         return ftp
 
     def __ftp_download(self, from_filename, to_filepath, ftp=None):
-        download_task(from_filename, to_filepath,
-                      login=self.login, password=self.password,
-                      remote_folder=self.remote_folder,
-                      verbose=self.verbose, ftp=ftp)
+        return download_task(from_filename, to_filepath,
+                             login=self.login, password=self.password,
+                             remote_folder=self.remote_folder,
+                             verbose=self.verbose, ftp=ftp)
 
-    # Async ftp file upload on new FTP connection
     def __ftp_upload(self, from_filepath, to_filename):
-        # TODO thread pool this!
+        """
+        Async ftp file upload on new FTP connection
+        """
 
-        def runner(**kwargs):
+        def runner(*args, **kwargs):
             try:
-                upload_task(**kwargs)
-            except BaseException:
-                pass
+                upload_task(*args, **kwargs)
+            except BaseException as e:
+                self.thread_dead = True
+                self.thread_result = e
 
+        self.executor.submit(runner,
+                             from_filepath, to_filename,
+                             host=self.host, port=self.port,
+                             login=self.login, password=self.password,
+                             die_on_ftperrors=True,
+                             remote_folder=self.remote_folder,
+                             verbose=self.verbose)
 
-        upload_task(from_filepath, to_filename,
-                    host=self.host, port=self.port, login=self.login,
-                    password=self.password,
-                    remote_folder=self.remote_folder,
-                    verbose=self.verbose)
+    def __ftp_remove(self, file_name):
+        """
+        Async ftp file upload on new FTP connection
+        """
+
+        def runner(fname):
+            try:
+                ftp = self.__getftp(self.remote_folder)
+                ftp.delete(fname)
+                ftp.close()
+            except BaseException as e:
+                self.thread_dead = True
+                self.thread_result = e
+
+        self.executor.submit(runner, file_name)
+
+    def __thread_check(self):
+        """
+        Raises exception from last thread death or just write to logger
+        depending on the `self.die_on_ftperrors` flag
+        """
+        if self.thread_dead:
+            logger.warning('Some FTP background thread died')
+            if self.die_on_ftperrors:
+                raise self.thread_result
+            else:
+                logger.exception('Thread error', exc_info=self.thread_result)
+            self.thread_dead = False
+            self.thread_result = None

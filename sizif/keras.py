@@ -53,7 +53,8 @@ class KerasModelWrapper:
 
     def fit_generator(self, *args, restart_storage=False, **kwargs):
         """
-        Proxy all *args and **kwargs to keras model `fit_generator` sugarcoated with state recovery and backup
+        Proxy all *args and **kwargs to keras model `fit_generator` sugarcoated with state recovery
+        and backup
 
         :param restart_storage:
                 True — reset storage stats and monitoring, not resetting the model itself
